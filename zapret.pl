@@ -566,7 +566,7 @@ sub databaseStatus {
             } else
             {
 	        sleep(180);
-	        set('getDumpDeltaList',0);
+	        set('getDumpDeltaList',0); #закоментировать тут если вы хотите подождать пока отработает zond
             }
 }#end sub
                                                                                                     
