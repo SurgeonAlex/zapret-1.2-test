@@ -8,7 +8,7 @@
 # Source function library.
 . /etc/init.d/functions
 
-binary="/usr/local/etc/zapret/zapret.pl"
+binary="/usr/local/etc/zapret-nDPI2/zapret.pl"
 
 [ -x $binary ] || exit 0
 
@@ -19,13 +19,15 @@ start() {
     daemon $binary
     RETVAL=$?
     PID=$!
-    echo [ $RETVAL -eq 0 ] && touch /var/lock/subsys/zapretd.lock
-    echo $PID > /var/run/zapretd.pid
+    if [ $RETVAL -eq 0 ]; then
+    touch /var/lock/subsys/zapretd.lock
+    fi
+    #echo $PID > /var/run/zapret.pid
 }
 
 stop() {
-    echo -n "Shutting down zapretd"
-    kill -9 `cat $PID `
+    echo -n "Shutting down zapret"
+    kill -9 `/bin/cat /var/run/zapretd.pid `
     RETVAL=$?
     echo
     if [ $RETVAL -eq 0 ]; then
