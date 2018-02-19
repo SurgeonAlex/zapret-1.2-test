@@ -1,0 +1,14 @@
+[Unit]
+Description=zapretd
+Requires=var-run.mount
+After=var-run.mount
+
+[Service]
+Type=fork
+KeepAfterExit=true
+PrivateTmp=false
+ExecStart=/usr/local/etc/zapret/zapret.pl
+PIDFile=/var/run/zapretd.pid
+
+[Install]
+WantedBy=multi-user.target
