@@ -264,7 +264,9 @@ sub getResult
 		} else {
 			set('lastResult', 'err');
 			set('lastAction', 'getResult');
-			exit;
+			sleep(60);
+			getResult();
+#			exit;
 		}
 	} else {
 		unlink $dir.'/dump.xml';
