@@ -395,6 +395,7 @@ sub getDumpDelta
 		# статистика
 		$logger->info("Added: domains: ".$added_domains.", urls: ".$added_urls.", IPv4 ips: ".$added_ipv4_ips.", IPv6 ips: ".$added_ipv6_ips.", subnets: ".$added_subnets.", records: ".$added_records);
 		$logger->info("Deleted: old records: ".$deleted_old_records);
+		$logger->info("Done...");
 		getParams();
 		getDumpDeltaList();
 		
@@ -417,8 +418,7 @@ sub getDumpDeltaList
 
         if( $@ )
         {
-    		my $error_coding = decode('Windows-1251', $@);
-                $logger->fatal("Error while getDumpDeltaList(): $error_coding".$@); #тут прилитают http error codes, ждем и вызываем метод заново.
+                $logger->fatal("Error while getDumpDeltaList(): ".$@); #тут прилитают http error codes, ждем и вызываем метод заново.
                 sleep(60);
                 getDumpDeltaList();
         }
