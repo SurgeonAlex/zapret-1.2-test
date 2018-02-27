@@ -8,7 +8,7 @@
 # Source function library.
 . /etc/init.d/functions
 
-binary="/usr/local/etc/zapret-nDPI2/zapret.pl"
+binary="/usr/local/etc/zapret/zapret.pl"
 
 [ -x $binary ] || exit 0
 
