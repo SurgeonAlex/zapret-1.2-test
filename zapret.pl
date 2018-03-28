@@ -1,5 +1,4 @@
 #!/usr/bin/perl -w
-
 use strict;
 use warnings;
 use File::Basename 'dirname';
@@ -75,7 +74,7 @@ chdir '$dir';
 umask 0;
 open STDIN,  '<', '/dev/null' or die "Can't read /dev/null: $!";
 open STDOUT, '>', '/dev/null' or die "Can't write to /dev/null: $!";
-open STDERR, '>', '/dev/null' or die "Can't write to /dev/null: $!";
+open STDERR, '>>', '/var/log/zapret-info-STDERR.log' or die "Can't write to /dev/null: $!";
 defined(my $pid = fork) or die "Can't fork: $!";
 exit 0 if $pid;
 exit 1 if not defined $pid;
@@ -280,7 +279,7 @@ sub getResult
 			$file = strftime "Full-arch-%Y-%m-%d-%H_%M_%S.zip", localtime($tm);
 		}
 
-		open F, '>'.$dir."/".$file || die "Can't open $dir/$file for writing!\n".$! ;
+		open F, '>'.$dir."/".$file || warn "Can't open $dir/$file for writing!\n".$! ;
 		binmode F;
 		print F $zip;
 		close F;
@@ -367,7 +366,7 @@ sub getDumpDelta
 			$file = strftime "$deltaId-delta-arch_delta-%Y-%m-%d-%H_%M_%S.zip", localtime($tm);
 		}
 
-		open F, '>'.$dir."/".$file || die "Can't open $dir/$file for writing!\n".$! ;
+		open F, '>'.$dir."/".$file || warn "Can't open $dir/$file for writing!\n".$! ;
 		binmode F;
 		print F $zip;
 		close F;
@@ -382,7 +381,7 @@ sub getDumpDelta
 		$logger->info("\n\n");
 		$logger->info("Got result delta, parsing dump.");
 		#
-		while(databaseStatus())
+		while(databaseZondStatus())
 		{
 		    $logger->info("Database not ready, getDumpDeltaList != 1, zond prog is work, waiting for parse dump...");
 		}
@@ -425,7 +424,7 @@ sub getDumpDeltaList
 
         if( !@result )
         {
-                $logger->info("Result not defined!");
+                $logger->info("Result not defined! getDumpDeltaList");
                 $logger->debug( Dumper( @result ));
                 sleep(60);
                 getDumpDeltaList();
@@ -438,6 +437,7 @@ sub getDumpDeltaList
         set('getDumpDeltaList', -1);
 	        $logger->info("getDumpDeltaList: -1");
     		getResult();
+    		
         }
         elsif( $result[0] == 0)
         {
@@ -496,13 +496,13 @@ sub getDumpDeltaList
                 getDumpDelta($deltaId);
         }
 	
-
-}
+    }
 
 sub dbConnect
 {
-	$DBH = DBI->connect_cached("DBI:mysql:database=".$db_name.";host=".$db_host, $db_user, $db_pass,{mysql_enable_utf8 => 1}) or die DBI->errstr;
+	$DBH = DBI->connect_cached("DBI:mysql:database=".$db_name.";host=".$db_host, $db_user, $db_pass,{mysql_enable_utf8 => 1}) or warn DBI->errstr;
 	$DBH->do("set names utf8");
+	return 0;
 }
 
 sub set
@@ -512,13 +512,13 @@ sub set
 	my $sth = $DBH->prepare("UPDATE zap2_settings SET value = ? WHERE param = ?");
 	$sth->bind_param(1, $value);
 	$sth->bind_param(2, $param);
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 }
 
 sub getParams
 {
 	my $sth = $DBH->prepare("SELECT param,value FROM zap2_settings");
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 	while( my $ips = $sth->fetchrow_hashref() )
 	{
 		my $param=$ips->{param};
@@ -558,7 +558,7 @@ sub getParams
 	}
 }
 
-sub databaseStatus {
+sub databaseZondStatus {
 	getParams(); #Вытаскиваем из getDumpDeltaList=? 2=resolver
 	    if ( $getDumpDeltaList == 0 )
             {
@@ -1044,7 +1044,7 @@ sub proceedOurBlacklist
 	eval {
 		# filling old records...
 		$sth = $DBH->prepare("SELECT id,decision_num FROM zap2_records WHERE decision_id = 0 ORDER BY date_add");
-		$sth->execute or die DBI->errstr;
+		$sth->execute or warn DBI->errstr;
 		while( my $ips = $sth->fetchrow_hashref() )
 		{
 			$OLD_BLACKLIST{$ips->{decision_num}}=$ips->{id};
@@ -1125,7 +1125,7 @@ sub getOld {
 	%OLD_TRUE_URLS = ();
 	# Contents
 	my $sth = $DBH->prepare("SELECT id,date_add,decision_id,decision_date,decision_num,decision_org,include_time FROM zap2_records WHERE decision_id > 0 ORDER BY date_add");
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 	while( my $ref = $sth->fetchrow_arrayref ) {
 	
 		my %item = (
@@ -1159,7 +1159,7 @@ sub getOld {
 	
 	# Domains
 	$sth = $DBH->prepare("SELECT record_id, domain, id FROM zap2_domains ORDER BY date_add");
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 	while( my $ref = $sth->fetchrow_arrayref ) {
 		$OLD_DOMAINS{md5_hex(encode_utf8($$ref[1]))} = $$ref[0];
 		@{$OLD_TRUE_DOMAINS{md5_hex(encode_utf8($$ref[1]))}} = ( $$ref[2], $$ref[1], $$ref[0] );
@@ -1167,7 +1167,7 @@ sub getOld {
 	
 	# URLs
 	$sth = $DBH->prepare("SELECT id,record_id,url FROM zap2_urls ORDER BY date_add");
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 	while( my $ref = $sth->fetchrow_arrayref ) {
 		$OLD_URLS{md5_hex(encode_utf8($$ref[2]))} = $$ref[0];
 		@{$OLD_TRUE_URLS{md5_hex(encode_utf8($$ref[2]))}} = ( $$ref[0], $$ref[2], $$ref[1] );
@@ -1175,7 +1175,7 @@ sub getOld {
 	
 	# Subnets
 	$sth = $DBH->prepare("SELECT record_id, subnet, id FROM zap2_subnets ORDER BY date_add");
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 	while( my $ref = $sth->fetchrow_arrayref ) {
 		$OLD_SUBNETS{$$ref[1]} = $$ref[0];
 		@{$OLD_TRUE_SUBNETS{$$ref[1]}} = ( $$ref[2], $$ref[1] );
@@ -1183,7 +1183,7 @@ sub getOld {
 	
 	# Ips
 	$sth = $DBH->prepare("SELECT ip, record_id, id, resolved FROM zap2_ips ORDER BY date_add");
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 	while( my $ips = $sth->fetchrow_hashref() )
 	{
 		my $old_ip=get_ip($ips->{ip});
@@ -1195,7 +1195,7 @@ sub getOld {
 	# ONLY ips
 	$sth = $DBH->prepare("SELECT ip, record_id, id FROM zap2_only_ips ORDER BY date_add");
 	# todo добавить поддержку ipv6
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 	while( my $ref = $sth->fetchrow_arrayref )
 	{
 		my $old_ip=get_ip($$ref[0]);
@@ -1205,17 +1205,17 @@ sub getOld {
 	
 	# Excludes
 	$sth = $DBH->prepare("SELECT subnet FROM zap2_ex_nets");
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 	while( my $ref = $sth->fetchrow_arrayref ) {
 		$EX_SUBNETS{$$ref[0]} = 1;
 	}
 	$sth = $DBH->prepare("SELECT inet_ntoa(ip) FROM zap2_ex_ips");
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 	while( my $ref = $sth->fetchrow_arrayref ) {
 		$EX_IPS{$$ref[0]} = 1;
 	}
 	$sth = $DBH->prepare("SELECT domain FROM zap2_ex_domains");
-	$sth->execute or die DBI->errstr;
+	$sth->execute or warn DBI->errstr;
 	while( my $ref = $sth->fetchrow_arrayref ) {
 		$EX_DOMAINS{$$ref[0]} = 1;
 	}
