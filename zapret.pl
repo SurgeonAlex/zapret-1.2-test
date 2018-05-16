@@ -1,4 +1,5 @@
 #!/usr/bin/perl -w
+# При отсутствии к бд проверяем $DBH->state 1 подсоединено
 use strict;
 use warnings;
 use File::Basename 'dirname';
@@ -29,6 +30,14 @@ use URI::UTF8::Punycode;
 use File::Path qw(make_path);
 use File::Copy;
 use File::Pid;
+
+my $abort_validate_rkn_dump = '/usr/local/etc/zapret/dump_xml_sig_is_not_valid.txt';
+my $abort_validate_rkn_dump_delta = '/usr/local/etc/zapret/dump_delta_xml_sig_is_not_valid.txt';
+
+if ( -e $abort_validate_rkn_dump || -e $abort_validate_rkn_dump_delta){
+print "RKN SIGN NOT VALIDATE!!! Show work dir!!!\n";
+exit 1;
+}
 
 my $lockFile = '/var/lock/subsys/zapretd.lock';
 my $pidd = '/var/run/zapretd.pid';
@@ -145,6 +154,10 @@ $dns_timeout = int($dns_timeout) if($dns_timeout);
 my $form_request = $Config->{'API.form_request'} || 0;
 
 my $our_blacklist = $Config->{'PATH.our_blacklist'} || "";
+
+my $openssl_bin_path="/usr/local/gostopenssl/bin/openssl";
+my $rkn_sha1_fingerprint = $Config->{'API.rkn_fingerprint'} || 0;
+chomp($rkn_sha1_fingerprint);
 
 ######## End config #####
 
@@ -291,6 +304,34 @@ sub getResult
 			copy($dir."/".$file,$apath."/".$file);
 			unlink $dir."/".$file;
 		}
+		
+		if ($rkn_sha1_fingerprint ne 0) {
+		
+		my $sig_fingerprint = `$openssl_bin_path pkcs7 -in $dir/dump.xml.sig -print_certs -inform DER > /tmp/rkn-dump.pem && $openssl_bin_path x509 -in /tmp/rkn-dump.pem -fingerprint -noout`;
+		chomp($sig_fingerprint);
+		
+		if ( $rkn_sha1_fingerprint eq $sig_fingerprint ) {
+		    $logger->info("SHA1 Fingerprint dump.xml.sig is valid");
+			my $validation_content = `$openssl_bin_path smime -verify -in $dir/dump.xml.sig -noverify -inform der -content $dir/dump.xml 2>&1 >&3 3>&- | /bin/grep successful 3>&-`;
+			    if ($validation_content =~ /Verification successful/) {
+			    $logger->info("RKN dump.xml Verification successful");
+			    unlink '/tmp/rkn-dump.pem';
+			    } else {
+			    $logger->info("RKN dump.xml and dump.xml.sig. Signer is not valid! Verification failed!!!");
+			    exit 1;
+			    }
+		} else {
+		$logger->info("RKN SHA1 Fingerprint dump.xml.sig $sig_fingerprint is not valid!!!");
+		open my $fh, '>', $dir.'/dump_xml_sig_is_not_valid.txt';
+		print {$fh} "RKN dump.xml.sig is NOT valid fingerprint $sig_fingerprint\n\n";
+		print {$fh} "zapret.conf RKN Filgerprint is $rkn_sha1_fingerprint\n";
+		print {$fh} $file. "\n";
+		close $fh;
+		exit 1;
+		       }
+                }
+                
+                
 		$logger->info("\n\n");
 		$logger->info("Got result getResult, parsing dump.");
 
@@ -378,6 +419,34 @@ sub getDumpDelta
 			copy($dir."/".$file,$apath."/".$file);
 			unlink $dir."/".$file;
 		}
+		
+		if($rkn_sha1_fingerprint ne 0) {
+		
+		my $sig_fingerprint = `$openssl_bin_path pkcs7 -in $dir/dump_delta.xml.sig -print_certs -inform DER > /tmp/rkn-dump_delta.pem && $openssl_bin_path x509 -in /tmp/rkn-dump_delta.pem -fingerprint -noout`;
+		chomp($sig_fingerprint);
+		
+		if ( "$rkn_sha1_fingerprint" eq "$sig_fingerprint" ) {
+			$logger->info("SHA1 Fingerprint dump_delta.xml.sig is valid");
+			my $validation_content_delta = `$openssl_bin_path smime -verify -in $dir/dump_delta.xml.sig -noverify -inform der -content $dir/dump_delta.xml 2>&1 >&3 3>&- | /bin/grep successful 3>&-`;
+			    
+			    if ($validation_content_delta =~ /Verification successful/) {
+			    $logger->info("RKN dump_delta.xml is Verification successful");
+			    unlink '/tmp/rkn-dump_delta.pem';
+			    } else {
+			    $logger->info("RKN dump_delta.xml and dump_delta.xml.sig. Signer is not valid! Verification failed!!!");
+			    exit 1;
+			    }
+		} else {
+		$logger->info("RKN SHA1 Fingerprint dump_delta.xml.sig $sig_fingerprint is not valid!!!");
+		open my $fh, '>', $dir.'/dump_delta_xml_sig_is_not_valid.txt';
+		print {$fh} "RKN dump_delta.xml.sig deltaId: $deltaId is NOT valid fingerprint $sig_fingerprint\n";
+		print {$fh} "zapret.conf RKN Filgerprint is $rkn_sha1_fingerprint\n";
+		print {$fh} $file. "\n";
+		close $fh;
+		exit 1;
+		        }
+		}
+		
 		$logger->info("\n\n");
 		$logger->info("Got result delta, parsing dump.");
 		#
@@ -900,6 +969,7 @@ sub processNew {
 		{
 			foreach my $ip ( @{$NEW{$d_id}->{ips}} )
 			{
+			    next if(!defined $ip);
 				if($need_to_block_ip)
 				{
 					if( !defined( $OLD_ONLY_IPS{$ip} ) )
