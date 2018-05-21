@@ -331,8 +331,6 @@ sub getResult
 		       }
                 }
                 
-                
-		$logger->info("\n\n");
 		$logger->info("Got result getResult, parsing dump.");
 
 		parseDump();
@@ -447,7 +445,6 @@ sub getDumpDelta
 		        }
 		}
 		
-		$logger->info("\n\n");
 		$logger->info("Got result delta, parsing dump.");
 		#
 		while(databaseZondStatus())
@@ -501,12 +498,10 @@ sub getDumpDeltaList
 
         if( $result[0] == -1 )
         {
-        set('lastResult', 'req-1');
-        set('lastAction', 'getDumpDeltaList_getResult');
-        set('getDumpDeltaList', -1);
-	        $logger->info("getDumpDeltaList: -1");
-    		getResult();
-    		
+            while(waiting_prog()) 
+            {
+    		$logger->info("Database not ready, getDumpDeltaList!=0, waiting...for getResult()");
+	    } 
         }
         elsif( $result[0] == 0)
         {
@@ -554,6 +549,7 @@ sub getDumpDeltaList
                 $logger->info("Delta deltaId: $deltaId, isEmpty: $isEmpty, actualDate: $actualDate is store...Next...");
                 getDumpDeltaList();
                 }
+                $logger->info("\n\n");
 		$logger->info("getDumpDeltaList: 1");
                 $logger->info("actualDate: $actualDate, deltaId: $deltaId, isEmpty: $isEmpty");
                 set('lastResult', 'req_1');
@@ -582,6 +578,22 @@ sub set
 	$sth->bind_param(1, $value);
 	$sth->bind_param(2, $param);
 	$sth->execute or warn DBI->errstr;
+}
+
+sub waiting_prog
+{
+    getParams();
+    if ( $getDumpDeltaList == 0 ) 
+            {
+	        set('lastResult', 'new');
+	        set('lastAction', 'getDumpDeltaList_getResult');
+	        set('getDumpDeltaList', -1);
+	        $logger->info("getDumpDeltaList: -1");
+		getResult();
+		return 0;
+	    } else {
+		    sleep(180);
+	    }
 }
 
 sub getParams
@@ -695,6 +707,9 @@ sub parseDump
         # Dump parsed.
 	# Get old data from DB
 	getOld();
+	
+	$resolve = 1 if ($lastResult eq 'new');
+	
 	my $resolver = AnyEvent::DNS->new(timeout => [$dns_timeout], max_outstanding => 50, server => \@resolvers_new); # создаём резолвер с нужными параметрами
 
 	my $cv = AnyEvent->condvar;
@@ -708,6 +723,10 @@ sub parseDump
 
 		$cv->recv;
 	}
+	#не понятно пока нужно ли тут getParams()
+	getParams();
+	clearOld() if ($lastResult eq 'new');
+	
 	set('lastAction', 'getResult') if ($lastResult eq 'got');
 	set('lastResult', 'req_0') if ($lastResult eq 'req_1');
 	set('getDumpDelta', $deltaId) if ($lastResult eq 'req_1');
@@ -1221,7 +1240,7 @@ sub getOld {
 				delIpOnly($del_id);
 				delSubnet($del_id);
 				delRecord($del_id);
-				$logger->info("Delete RecordId: ".$del_id." DecisionId: ".$del_decision_id);
+				$logger->info("Delete record_id: ".$del_id." decision_id: ".$del_decision_id);
 				$deleted_old_records++;
 			}
 		}
@@ -1290,6 +1309,43 @@ sub getOld {
 		$EX_DOMAINS{$$ref[0]} = 1;
 	}
 }
+
+
+sub clearOld
+{
+	foreach my $domain ( keys %OLD_TRUE_DOMAINS ) {
+			delDomainNew( $OLD_TRUE_DOMAINS{$domain}[0], $OLD_TRUE_DOMAINS{$domain}[1] );
+			$logger->debug("Deleting domain id ".$OLD_TRUE_DOMAINS{$domain}[0]." ( ".$OLD_TRUE_DOMAINS{$domain}[1]." )");
+	}
+	foreach my $url ( keys %OLD_TRUE_URLS ) {
+			delUrlNew( $OLD_TRUE_URLS{$url}[0], $OLD_TRUE_URLS{$url}[1] );
+			$logger->debug("Deleting url id ".$OLD_TRUE_URLS{$url}[0]." (".$OLD_TRUE_URLS{$url}[1].")");
+	}
+
+	foreach my $record_id (keys %ZAP_OLD_TRUE_IPS)
+	{
+		foreach my $ip ( keys %{$ZAP_OLD_TRUE_IPS{$record_id}} )
+		{
+			$logger->debug("Deleting ip $ip for record_id $record_id with id ".$ZAP_OLD_TRUE_IPS{$record_id}{$ip});
+			delIpNew($ZAP_OLD_TRUE_IPS{$record_id}{$ip}, $ip);
+		}
+	}
+
+	foreach my $ip ( keys %OLD_TRUE_ONLY_IPS ) {
+			delIpOnlyNew( $OLD_TRUE_ONLY_IPS{$ip}[0], $OLD_TRUE_ONLY_IPS{$ip}[1] );
+	}
+
+	foreach my $net ( keys %OLD_TRUE_SUBNETS ) {
+			delSubnetNew( $OLD_TRUE_SUBNETS{$net}[0], $OLD_TRUE_SUBNETS{$net}[1] );
+	}
+
+	foreach my $item ( keys %OLD_TRUE ) {
+			#print $OLD_TRUE{$item}->{id};
+			$logger->debug("Deleting decision record of id ".$OLD_TRUE{$item}->{id});
+			delRecordNew($OLD_TRUE{$item}->{id});
+	}
+}
+
 
 sub Resolve
 {
@@ -1372,6 +1428,74 @@ sub delRecord {
 	my $id = shift;
 	
 	$logger->debug("Removing record id ".$id);
+	
+	my $sth = $DBH->prepare("DELETE FROM zap2_records WHERE id=?");
+	$sth->bind_param( 1, $id );
+	$sth->execute;
+}
+
+#для быстроты, переделать посже
+
+sub delDomainNew {
+	my $id = shift;
+	my $domain = shift;
+	
+	$logger->info("Removing old domain ".$domain." (id ".$id.")");
+	
+	my $sth = $DBH->prepare("DELETE FROM zap2_domains WHERE id=?");
+	$sth->bind_param( 1, $id );
+	$sth->execute;
+}
+
+sub delUrlNew {
+	my $id = shift;
+	my $url = shift;
+
+	$logger->info("Removing old URL ".$url." (id ".$id.")");
+	
+	my $sth = $DBH->prepare("DELETE FROM zap2_urls WHERE id=?");
+	$sth->bind_param( 1, $id );
+	$sth->execute;
+}
+
+sub delIpNew
+{
+	my $id = shift;
+	my $ip = shift;
+	
+	$logger->info("Removing old IP ".$ip." (id ".$id.")");
+	
+	my $sth = $DBH->prepare("DELETE FROM zap2_ips WHERE id=?");
+	$sth->bind_param( 1, $id );
+	$sth->execute;
+}
+
+sub delIpOnlyNew {
+	my $id = shift;
+	my $ip = shift;
+	
+	$logger->info("Removing old ONLY IP ".$ip." (id ".$id.")");
+	
+	my $sth = $DBH->prepare("DELETE FROM zap2_only_ips WHERE id=?");
+	$sth->bind_param( 1, $id );
+	$sth->execute;
+}
+
+sub delSubnetNew {
+	my $id = shift;
+	my $subnet = shift;
+
+	$logger->info("Removing old subnet ".$subnet." (id ".$id.")");
+	
+	my $sth = $DBH->prepare("DELETE FROM zap2_subnets WHERE id=?");
+	$sth->bind_param( 1, $id );
+	$sth->execute;
+}
+
+sub delRecordNew {
+	my $id = shift;
+	
+	$logger->debug("Removing old record ".$id);
 	
 	my $sth = $DBH->prepare("DELETE FROM zap2_records WHERE id=?");
 	$sth->bind_param( 1, $id );
