@@ -94,6 +94,12 @@ my $DBH;
 my ($lastDumpDateOld, $lastAction, $lastCode, $lastResult, $actualDate, $deltaId, $isEmpty, $getDumpDeltaList);
 dbConnect();
 
+getParams();
+if ($lastResult eq 'new'){
+$logger->info("Virguzka script status is getResult, waiting server zapretd of resolver finished!!!");
+exit 1;
+}
+
 my %NEW = ();
 my %OLD = ();
 my %OLD_ONLY_IPS = ();
@@ -301,8 +307,6 @@ sub getOld {
         %OLD_TRUE_DOMAINS = ();
         %OLD_TRUE_SUBNETS = ();
         %OLD_TRUE_URLS = ();
-                                                                        
-
 	# Contents
 	my $sth = $DBH->prepare("SELECT id,date_add,decision_id,decision_date,decision_num,decision_org,include_time FROM zap2_records WHERE decision_id > 0 ORDER BY date_add");
 	$sth->execute or die DBI->errstr;
