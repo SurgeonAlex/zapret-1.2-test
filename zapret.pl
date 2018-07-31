@@ -1,7 +1,8 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 # При отсутствии к бд проверяем $DBH->state 1 подсоединено
 use strict;
 use warnings;
+no warnings 'recursion';
 use File::Basename 'dirname';
 use File::Spec;
 use lib join '/',File::Spec->splitdir(dirname(__FILE__));
@@ -31,11 +32,12 @@ use File::Path qw(make_path);
 use File::Copy;
 use File::Pid;
 
-my $abort_validate_rkn_dump = '/usr/local/etc/zapret/dump_xml_sig_is_not_valid.txt';
+my $abort_validate_rkn_dump = '─/usr/local/etc/zapret/dump_xml_sig_is_not_valid.txt';
 my $abort_validate_rkn_dump_delta = '/usr/local/etc/zapret/dump_delta_xml_sig_is_not_valid.txt';
 
 if ( -e $abort_validate_rkn_dump || -e $abort_validate_rkn_dump_delta){
 print "RKN SIGN NOT VALIDATE!!! Show work dir!!!\n";
+system('/sbin/service zapretd stop');
 exit 1;
 }
 
@@ -209,7 +211,7 @@ until($dieNow)
 my $start_time=localtime();
 $logger->info("Start vigruzka at ".$start_time);
 
-if( $lastResult eq 'send' || $lastResult eq 'new' || $lastResult eq 'getDumpDeltaList_getResult' || $lastResult eq 'req-1')
+if( $lastResult eq 'send' || $lastResult eq 'new' || $lastResult eq 'reNew' ||$lastResult eq 'getDumpDeltaList_getResult' || $lastResult eq 'req-1')
 {
 	$logger->info("Last request is send, waiting for the data...");
 	while (getResult())
@@ -449,7 +451,7 @@ sub getDumpDelta
 		#
 		while(databaseZondStatus())
 		{
-		    $logger->info("Database not ready, getDumpDeltaList != 1, zond prog is work, waiting for parse dump...");
+		    $logger->info("Database not ready, getDumpDeltaList != 0, zond prog is work, waiting for parse dump...");
 		}
 		#                                        
 		set('lasltAction', 'getDumpDelta');
@@ -502,6 +504,7 @@ sub getDumpDeltaList
             {
     		$logger->info("Database not ready, getDumpDeltaList!=0, waiting...for getResult()");
 	    } 
+	    getDumpDeltaList();
         }
         elsif( $result[0] == 0)
         {
@@ -585,8 +588,8 @@ sub waiting_prog
     getParams();
     if ( $getDumpDeltaList == 0 ) 
             {
-	        set('lastResult', 'new');
-	        set('lastAction', 'getDumpDeltaList_getResult');
+	        set('lastResult', 'reNew');
+	        set('lastAction', 'getDumpDeltaList_getResultReNew');
 	        set('getDumpDeltaList', -1);
 	        $logger->info("getDumpDeltaList: -1");
 		getResult();
@@ -657,7 +660,7 @@ sub databaseZondStatus {
 
 sub parseDump
 {
-        $logger->info("Parsing dump...") if ($lastResult eq 'got' || $lastResult eq 'new');
+        $logger->info("Parsing dump...") if ($lastResult eq 'got' || $lastResult eq 'new' || $lastResult eq 'reNew' );
 	$logger->info("Parsing dump delta...") if ($lastResult eq 'req_1');
 
 	my $xml = new XML::Simple;
@@ -708,7 +711,7 @@ sub parseDump
 	# Get old data from DB
 	getOld();
 	
-	$resolve = 1 if ($lastResult eq 'new');
+	$resolve = 1 if ($lastResult eq 'reNew');
 	
 	my $resolver = AnyEvent::DNS->new(timeout => [$dns_timeout], max_outstanding => 50, server => \@resolvers_new); # создаём резолвер с нужными параметрами
 
@@ -725,7 +728,7 @@ sub parseDump
 	}
 	#не понятно пока нужно ли тут getParams()
 	getParams();
-	clearOld() if ($lastResult eq 'new');
+	clearOld() if ($lastResult eq 'reNew');
 	
 	set('lastAction', 'getResult') if ($lastResult eq 'got');
 	set('lastResult', 'req_0') if ($lastResult eq 'req_1');
